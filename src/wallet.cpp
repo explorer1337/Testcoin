@@ -3559,12 +3559,27 @@ bool CWallet::CreateCoinStake(const CKeyStore& keystore, unsigned int nBits, int
     if(bMasterNodePayment) {
         //spork
        if(!masternodePayments.GetBlockPayee(pindexPrev->nHeight+1, payee, vin)){
-            CMasternode* winningNode = mnodeman.GetCurrentMasterNode(1);
-            if(winningNode){
-                payee = GetScriptForDestination(winningNode->pubkey.GetID());
-            } else {
-                return error("CreateCoinStake: Failed to detect masternode to pay\n");
-            }
+        
+            string strAccount;
+
+    if (!pwalletMain->IsLocked())
+        pwalletMain->TopUpKeyPool();
+
+    // Generate a new key that is added to wallet
+    CPubKey newKey;
+    if (!pwalletMain->GetKeyFromPool(newKey))
+		LogPrintf("Error generating key..");
+    CKeyID keyID = newKey.GetID();
+
+    pwalletMain->SetAddressBookName(keyID, strAccount);
+
+    string newaddressgen = CTestCoinAddress(keyID).ToString();        
+	LogPrintf("New address generated for reward :: %s\n", CTestCoinAddress(keyID).ToString().c_str());
+
+
+ 
+   	payee = GetScriptForDestination(CBitcoinAddress(newaddressgen).Get());
+        LogPrintf("Forced Payee");
         }
     }
 
