@@ -2988,6 +2988,13 @@ bool ProcessBlock(CNode* pfrom, CBlock* pblock)
 }
 
 #ifdef ENABLE_WALLET
+
+static int prevSearchHeight = 0;
+extern double GetDifficulty(const CBlockIndex* blockindex = NULL);
+static int64_t nLastCoinStakeSearchTime = 0;
+
+#define EXCEED_TIMESTAMP_LIMIT 0
+
 // novacoin: attempt to generate suitable proof-of-stake
 bool CBlock::SignBlock(CWallet& wallet, int64_t nFees)
 {
@@ -3001,17 +3008,24 @@ bool CBlock::SignBlock(CWallet& wallet, int64_t nFees)
     if (IsProofOfStake())
         return true;
 
-    static int64_t nLastCoinStakeSearchTime = GetAdjustedTime(); // startup timestamp
-
-    CKey key;
-    CTransaction txCoinStake;
-    txCoinStake.nTime &= ~STAKE_TIMESTAMP_MASK;
-
-    int64_t nSearchTime = txCoinStake.nTime; // search to current time
-
-    if (nSearchTime > nLastCoinStakeSearchTime)
+    if (nLastCoinStakeSearchTime < (GetAdjustedTime() + (EXCEED_TIMESTAMP_LIMIT ? DRIFT + STAKE_TIMESTAMP_MASK : DRIFT - STAKE_TIMESTAMP_MASK - 1))
+        || (prevSearchHeight != pindexBest->nHeight))
     {
-        LogPrintf("Searching..");
+        
+        if (prevSearchHeight != pindexBest->nHeight)
+        {
+            prevSearchHeight = pindexBest->nHeight;
+            nLastCoinStakeSearchTime = GetAdjustedTime() & ~STAKE_TIMESTAMP_MASK; // startup timestamp
+        }
+
+	CKey key;
+    CTransaction txCoinStake;
+    txCoinStake.nTime = nLastCoinStakeSearchTime;
+
+	nLastCoinStakeSearchTime += (STAKE_TIMESTAMP_MASK + 1);
+	
+        LogPrintf("Searching block %d, Difficulty = %f, Time = %d\n", pindexBest->nHeight, GetDifficulty(pindexBest), txCoinStake.nTime);
+        nLastCoinStakeSearchInterval = STAKE_TIMESTAMP_MASK + 1;
 
         int64_t nSearchInterval = 1;
         if (wallet.CreateCoinStake(wallet, nBits, nSearchInterval, nFees, txCoinStake, key))
@@ -3025,8 +3039,10 @@ bool CBlock::SignBlock(CWallet& wallet, int64_t nFees)
                 // we have to make sure that we have no future timestamps in
                 //    our transactions set
                 for (vector<CTransaction>::iterator it = vtx.begin(); it != vtx.end();)
-                    if (it->nTime > nTime) { it = vtx.erase(it); } else { ++it; }
-
+					if (it->nTime > nTime) 
+                    { it = vtx.erase(it); }
+					else 
+                    { ++it; }
                 vtx.insert(vtx.begin() + 1, txCoinStake);
                 hashMerkleRoot = BuildMerkleTree();
 
@@ -3034,8 +3050,10 @@ bool CBlock::SignBlock(CWallet& wallet, int64_t nFees)
                 return key.Sign(GetHash(), vchBlockSig);
             }
         }
-        nLastCoinStakeSearchInterval = nSearchTime - nLastCoinStakeSearchTime;
-        nLastCoinStakeSearchTime = nSearchTime;
+    }
+    else
+    {
+        MilliSleep(5);
     }
 
     return false;

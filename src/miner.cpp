@@ -576,11 +576,8 @@ void ThreadStakeMiner(CWallet *pwallet)
         if (pblock->SignBlock(*pwallet, nFees))
         {
             SetThreadPriority(THREAD_PRIORITY_NORMAL);
+			LogPrintf("Found stake to submit!\n");
             CheckStake(pblock.get(), *pwallet);
-            SetThreadPriority(THREAD_PRIORITY_LOWEST);
-            MilliSleep(500);
         }
-        else
-            MilliSleep(nMinerSleep);
     }
 }
