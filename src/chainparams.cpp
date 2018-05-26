@@ -106,11 +106,11 @@ public:
 
         hashGenesisBlock = genesis.GetHash();
 
-		LogPrintf("Display genesis hash so we can input it below %s\n", hashGenesisBlock.ToString().c_str());
-	    LogPrintf("Display merkle root so we can input it below %s\n", genesis.hashMerkleRoot.ToString().c_str());
+		//LogPrintf("Display genesis hash so we can input it below %s\n", hashGenesisBlock.ToString().c_str());
+	    //LogPrintf("Display merkle root so we can input it below %s\n", genesis.hashMerkleRoot.ToString().c_str());
 		
-        assert(hashGenesisBlock == uint256(""));
-        assert(genesis.hashMerkleRoot == uint256(""));
+        assert(hashGenesisBlock == uint256("905bb7baea92ecf7dc3a3a43b604a7e95c00eed09b5ab89d9e5824396d321b57"));
+        assert(genesis.hashMerkleRoot == uint256("2efdeeaf849ebb79c567f0c510f2106bb0250e9f6202e4ce94ef839ef7f8ac1d"));
 
         base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1,63); // S
         base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1,21);
