@@ -70,8 +70,19 @@ inline bool MoneyRange(int64_t nValue) { return (nValue >= 0 && nValue <= MAX_MO
 /** Threshold for nLockTime: below this value it is interpreted as block number, otherwise as UNIX timestamp. */
 static const unsigned int LOCKTIME_THRESHOLD = 500000000; // Tue Nov  5 00:53:20 1985 UTC
 
+#define DRIFT_FORK_HEIGHT 85
+
 static const int64_t DRIFT = 600;
-inline int64_t FutureDrift(int64_t nTime) { return nTime + DRIFT; }
+
+static const int64_t DRIFTv2 = 120; // shortened drift window to deter exploits
+
+inline int64_t FutureDrift(int64_t nTime)
+{
+    if (nBestHeight >= DRIFT_FORK_HEIGHT)
+        return nTime + DRIFTv2;
+    else
+        return nTime + DRIFT;
+}
 
 /** "reject" message codes **/
 static const unsigned char REJECT_INVALID = 0x10;
@@ -1051,8 +1062,11 @@ public:
 
     int64_t GetPastTimeLimit() const
     {
-        return GetBlockTime() - DRIFT;
-    }
+        if (nBestHeight >= DRIFT_FORK_HEIGHT)
+            return GetBlockTime() - DRIFTv2;
+        else
+            return GetBlockTime() - DRIFT;    
+	}
 
     enum { nMedianTimeSpan=11 };
 
