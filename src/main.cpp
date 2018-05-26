@@ -2625,7 +2625,7 @@ bool CBlock::CheckBlock(bool fCheckPOW, bool fCheckMerkleRoot, bool fCheckSig) c
 							
 							CTxDestination addresswinner;
 							ExtractDestination(winningnode, addresswinner);
-							CDeviantcoinAddress addressdevwinner(addresswinner);
+							CTestCoinAddress addressdevwinner(addresswinner);
 							
 							if(address2.ToString() != addressdevwinner.ToString()) {
 								LogPrintf("Wrong Winner : %s\n", address2.ToString());
