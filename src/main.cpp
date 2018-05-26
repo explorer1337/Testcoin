@@ -1416,7 +1416,6 @@ int64_t GetProofOfStakeReward(const CBlockIndex* pindexPrev, int64_t nCoinAge, i
     return nSubsidy + nFees;
 }
 
-static int64_t nTargetTimespan = 5 * 90;
 
 // ppcoin: find last block index up to pindex
 const CBlockIndex* GetLastBlockIndex(const CBlockIndex* pindex, bool fProofOfStake)
@@ -1425,6 +1424,11 @@ const CBlockIndex* GetLastBlockIndex(const CBlockIndex* pindex, bool fProofOfSta
         pindex = pindex->pprev;
     return pindex;
 }
+
+static const int TARGET_DIFF_UPDATE_START = 85;
+
+static int64_t nTargetTimespan = 10 * 60;  // 10 mins
+static int64_t nTargetTimespanV2 = 20 * 60;  // 20 mins
 
 unsigned int GetNextTargetRequired(const CBlockIndex* pindexLast, bool fProofOfStake)
 {
@@ -1435,6 +1439,8 @@ unsigned int GetNextTargetRequired(const CBlockIndex* pindexLast, bool fProofOfS
 
     if (pindexLast == NULL)
         return bnTargetLimit.GetCompact(); // genesis block
+	
+	int nHeight = pindexLast->nHeight + 1;
 
     const CBlockIndex* pindexPrev = GetLastBlockIndex(pindexLast, fProofOfStake);
     if (pindexPrev->pprev == NULL)
@@ -1445,31 +1451,40 @@ unsigned int GetNextTargetRequired(const CBlockIndex* pindexLast, bool fProofOfS
 
     int64_t nActualSpacing = pindexPrev->GetBlockTime() - pindexPrevPrev->GetBlockTime();
 
-    if(!NO_FORK && pindexBest->nHeight >= HARD_FORK_BLOCK){
-        if (nActualSpacing < 0){
-            nActualSpacing = TARGET_SPACING_FORK;
-        }
-        if(nActualSpacing > TARGET_SPACING_FORK * 10){
-            nActualSpacing = TARGET_SPACING_FORK * 10;
-        }
-    } else if(NO_FORK || pindexBest->nHeight < HARD_FORK_BLOCK) {
-        if (nActualSpacing < 0){
-            nActualSpacing = TARGET_SPACING;
-        }
-    }
-
-    // ppcoin: target change every block
-    // ppcoin: retarget with exponential moving toward target spacing
     CBigNum bnNew;
     bnNew.SetCompact(pindexPrev->nBits);
-    if(!NO_FORK && pindexBest->nHeight >= HARD_FORK_BLOCK){
-        int64_t nInterval = nTargetTimespan / TARGET_SPACING_FORK;
-        bnNew *= ((nInterval - 1) * TARGET_SPACING_FORK + nActualSpacing + nActualSpacing);
-        bnNew /= ((nInterval + 1) * TARGET_SPACING_FORK);
-    } else {
+
+    if (nHeight < TARGET_DIFF_UPDATE_START)
+    {
+        if (nActualSpacing < 0)
+        {
+            nActualSpacing = TARGET_SPACING;
+        }
         int64_t nInterval = nTargetTimespan / TARGET_SPACING;
         bnNew *= ((nInterval - 1) * TARGET_SPACING + nActualSpacing + nActualSpacing);
         bnNew /= ((nInterval + 1) * TARGET_SPACING);
+    }
+    else
+    {
+        // In this version, it is OK if nActualSpacing is negative
+        // We'll still put some reasonable bounds on it just in case
+        
+        // Normally, nTargetspanV2 should be much greater than either nActualSpacing or TARGET_SPACING
+        // The new change looks to correct an exploit where a timestamp is falsified by the submitter
+        // This can cause a temporary jump in nActualSpacing and similar drop on the next block with the correct timestamp
+        // For example, if nActualSpacing is typically 60, and goes to 660 (600 added on):
+        // First time, bnNew is adjusted by (660 - 60 + 2400) / (60 - 660 + 2400) = 3000 / 1800
+        // Next time, nActualSpacing is now -540 (120 - 660), bnNew is adjusted by (-540 - 60 + 2400) / (60 + 540 + 2400) = 1800 / 3000
+        // The net product is 1 -- effectively canceling each other out.
+        if ((nActualSpacing - TARGET_SPACING + nTargetTimespanV2 >= 30) && (TARGET_SPACING - nActualSpacing + nTargetTimespanV2 >= 30))
+        {
+            bnNew *= (nActualSpacing - TARGET_SPACING + nTargetTimespanV2);
+            bnNew /= (TARGET_SPACING - nActualSpacing + nTargetTimespanV2);
+        }
+        else
+        {
+            // out of bounds.  Do not change difficulty
+        }
     }
 
     if (bnNew <= 0 || bnNew > bnTargetLimit)
@@ -2599,19 +2614,30 @@ bool CBlock::CheckBlock(bool fCheckPOW, bool fCheckMerkleRoot, bool fCheckSig) c
                     ExtractDestination(payee, address1);
                     CBitcoinAddress address2(address1);
 
-		LogPrintf("Block input MN Winner : %s\n", address2.ToString().c_str());
+					if(nBestHeight >= 85) { //MN Winner check kicks in after this block.				
 
-					CMasternode* winningNode = mnodeman.GetCurrentMasterNode(1);
-		            if(winningNode){
-					winnerr = GetScriptForDestination(winningNode->pubkey.GetID());
-										        CTxDestination address31;
-        ExtractDestination(winnerr, address31);
-        CTestCoinAddress address32(address31);
-
-        LogPrintf("Client winner masternode for check %s\n", address32.ToString().c_str());
-					}
-					else {
-			        LogPrintf("No winner found !");	
+					CMasternode* MNWinner = mnodeman.GetCurrentMasterNode(1); //The correct MN Winner of this block			
+                    CScript winningnode;
+					
+						if(MNWinner){ //Check if there is a winner at all.
+							
+							winningnode = GetScriptForDestination(MNWinner->pubkey.GetID());
+							
+							CTxDestination addresswinner;
+							ExtractDestination(winningnode, addresswinner);
+							CDeviantcoinAddress addressdevwinner(addresswinner);
+							
+							if(address2.ToString() != addressdevwinner.ToString()) {
+								LogPrintf("Wrong Winner : %s\n", address2.ToString());
+								LogPrintf("Right Winner : %s\n", addressdevwinner.ToString());
+								LogPrintf("Deny block !");								
+								return DoS(100, error("CheckBlock() : Masternode winner check, wrong winner."));
+							}
+						}
+						else {
+							LogPrintf("No masternode winner found !");
+	                        return DoS(100, error("CheckBlock() : Couldn't find masternode winner"));
+						}
 					}
 
 
